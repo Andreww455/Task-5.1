@@ -1,4 +1,3 @@
-import Joi from 'joi';
 import bcrypt from 'bcryptjs';
 import { Instructor } from '../models/Instructor.js';
 
@@ -7,22 +6,12 @@ import { Instructor } from '../models/Instructor.js';
 // =============================================================================
 //  Defence layers:
 //   1. express-mongo-sanitize (app.js) strips any `$`/`.` keys from body/query.
-//   2. Joi enforces TYPES (plain strings only) and an allow-list of fields.
+//   2. A plain `typeof === 'string'` check (no Joi) rejects anything the
+//      sanitizer left behind, e.g. `{}` where a string was expected.
 //   3. Passwords are bcrypt-hashed (model hook) and compared in code, never
 //      placed inside a query filter, so there is no regex/oracle to abuse.
 //   4. Secret fields are `select:false` in the model and never serialised.
 // =============================================================================
-
-const loginSchema = Joi.object({
-  username: Joi.string().trim().min(1).max(50).required(),
-  password: Joi.string().min(1).max(128).required()
-}).unknown(false);
-
-const searchSchema = Joi.object({
-  name: Joi.string().trim().max(100).allow(''),
-  department: Joi.string().trim().max(60).allow(''),
-  role: Joi.string().valid('instructor', 'superadmin')
-}).unknown(false);
 
 // Only PUBLIC fields ever leave the server.
 function publicProfile(doc) {
@@ -45,11 +34,10 @@ const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 10);
 // POST /api/instructors/login
 export async function loginInstructor(req, res, next) {
   try {
-    const { value, error } = loginSchema.validate(req.body);
-    if (error) {
+    const { username, password } = req.body || {};
+    if (typeof username !== 'string' || typeof password !== 'string' || !username || !password) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
-    const { username, password } = value;
 
     // Look up by username ONLY (a validated string), then compare the hash.
     const instructor = await Instructor.findOne({ username }).select('+password');
@@ -83,20 +71,13 @@ export async function searchInstructors(req, res, next) {
   try {
     // Keep only allow-listed keys whose value is a plain string. Anything else
     // (objects like {$ne:..}, arrays, unknown keys such as $where) is dropped.
-    const params = {};
-    for (const key of ['name', 'department', 'role']) {
-      if (typeof req.query[key] === 'string') params[key] = req.query[key];
-    }
-
-    const { value, error } = searchSchema.validate(params);
-    if (error) {
-      return res.status(400).json({ message: 'Invalid search parameters' });
-    }
-
+    const { name, department, role } = req.query;
     const filter = {};
-    if (value.name) filter.name = { $regex: escapeRegex(value.name), $options: 'i' };
-    if (value.department) filter.department = value.department;
-    if (value.role) filter.role = value.role;
+    if (typeof name === 'string' && name) {
+      filter.name = { $regex: escapeRegex(name), $options: 'i' };
+    }
+    if (typeof department === 'string' && department) filter.department = department;
+    if (role === 'instructor' || role === 'superadmin') filter.role = role;
 
     const instructors = await Instructor.find(filter)
       .select('name username department role')
