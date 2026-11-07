@@ -6,7 +6,7 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "seed:instructors": "node src/seed/instructors.js",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand"
+    "test": "node --experimental-vm-modules ../node_modules/jest/bin/jest.js --runInBand"
   },
   "jest": {
     "testEnvironment": "node",
